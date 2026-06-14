@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
@@ -21,9 +23,11 @@ import com.example.todofamily.databinding.ActivityMainBinding;
 import com.example.todofamily.databinding.ItemTaskBinding;
 import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
+import com.example.todofamily.utils.WrapContentLinearLayoutManager;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
 
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -59,16 +63,35 @@ public class MainActivity extends AppCompatActivity {
                 .child(currentSpaceId)
                 .child("tasks");
 
-        binding.tasksRv.setLayoutManager(new LinearLayoutManager(this));
+        binding.tasksRv.setLayoutManager(new WrapContentLinearLayoutManager(this));
 
         setupAdapter();
 
         binding.addTaskFab.setOnClickListener(v -> showAddTaskDialog());
+
+        binding.bottomNavigation.setOnItemSelectedListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.nav_tasks) {
+                return true;
+            } else if (id == R.id.nav_family) {
+                Toast.makeText(this, "Раздел 'Семья' скоро появится", Toast.LENGTH_SHORT).show();
+                return false;
+            } else if (id == R.id.nav_notifications) {
+                Toast.makeText(this, "Уведомления скоро появятся", Toast.LENGTH_SHORT).show();
+                return false;
+            } else if (id == R.id.nav_profile) {
+                startActivity(new Intent(MainActivity.this, ProfileActivity.class));
+                return false;
+            }
+            return false;
+        });
     }
 
     private void setupAdapter() {
+        Query query = spaceRef.orderByChild("completed").equalTo(false);
+
         FirebaseRecyclerOptions<Task> options = new FirebaseRecyclerOptions.Builder<Task>()
-                .setQuery(spaceRef, Task.class)
+                .setQuery(query, Task.class)
                 .build();
 
         adapter = new FirebaseRecyclerAdapter<Task, TaskViewHolder>(options) {
@@ -179,6 +202,13 @@ public class MainActivity extends AppCompatActivity {
         });
         builder.setNegativeButton("Отмена", null);
         builder.show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // При возврате на главный экран убеждаемся, что выбрана иконка задач
+        binding.bottomNavigation.setSelectedItemId(R.id.nav_tasks);
     }
 
     @Override
