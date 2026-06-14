@@ -113,6 +113,13 @@ public class ProfileActivity extends AppCompatActivity {
                     holder.binding.taskDateTv.setVisibility(View.GONE);
                 }
 
+                if (model.getAssignedBy() != null && !model.getAssignedBy().equals(FirebaseAuth.getInstance().getUid())) {
+                    holder.binding.taskAssignerTv.setVisibility(View.VISIBLE);
+                    holder.binding.taskAssignerTv.setText("От: " + model.getAssignedByName());
+                } else {
+                    holder.binding.taskAssignerTv.setVisibility(View.GONE);
+                }
+
                 holder.binding.taskCheckbox.setOnClickListener(v -> {
                     spaceRef.child(model.getId()).child("completed").setValue(holder.binding.taskCheckbox.isChecked());
                 });

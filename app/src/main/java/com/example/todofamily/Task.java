@@ -5,7 +5,10 @@ public class Task {
     private String title;
     private String description;
     private boolean completed;
-    private long dueDate; // Таймстамп дедлайна
+    private long dueDate;
+    private String assignedBy;
+    private String assignedTo;
+    private String assignedByName;
 
     public Task() {
         // Пустой конструктор для Firebase
@@ -17,6 +20,18 @@ public class Task {
         this.description = description;
         this.completed = completed;
         this.dueDate = dueDate;
+    }
+
+    // Полный конструктор для назначений
+    public Task(String id, String title, String description, boolean completed, long dueDate, String assignedBy, String assignedTo, String assignedByName) {
+        this.id = id;
+        this.title = title;
+        this.description = description;
+        this.completed = completed;
+        this.dueDate = dueDate;
+        this.assignedBy = assignedBy;
+        this.assignedTo = assignedTo;
+        this.assignedByName = assignedByName;
     }
 
     public String getId() { return id; }
@@ -33,4 +48,13 @@ public class Task {
 
     public long getDueDate() { return dueDate; }
     public void setDueDate(long dueDate) { this.dueDate = dueDate; }
+
+    public String getAssignedBy() { return assignedBy; }
+    public void setAssignedBy(String assignedBy) { this.assignedBy = assignedBy; }
+
+    public String getAssignedTo() { return assignedTo; }
+    public void setAssignedTo(String assignedTo) { this.assignedTo = assignedTo; }
+
+    public String getAssignedByName() { return assignedByName; }
+    public void setAssignedByName(String assignedByName) { this.assignedByName = assignedByName; }
 }

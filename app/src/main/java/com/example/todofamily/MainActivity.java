@@ -9,8 +9,10 @@ import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -25,13 +27,18 @@ import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.example.todofamily.utils.WrapContentLinearLayoutManager;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.Query;
+import com.google.firebase.database.ValueEventListener;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
@@ -40,7 +47,11 @@ public class MainActivity extends AppCompatActivity {
     private DatabaseReference spaceRef;
     private FirebaseRecyclerAdapter<Task, TaskViewHolder> adapter;
     private String currentSpaceId; 
+    private String currentUserName;
+    private String currentFamilyId;
     private long selectedDueDate = 0;
+    
+    private List<Member> familyMembers = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,6 +74,8 @@ public class MainActivity extends AppCompatActivity {
                 .child(currentSpaceId)
                 .child("tasks");
 
+        loadCurrentUserData();
+        
         binding.tasksRv.setLayoutManager(new WrapContentLinearLayoutManager(this));
 
         setupAdapter();
@@ -74,7 +87,7 @@ public class MainActivity extends AppCompatActivity {
             if (id == R.id.nav_tasks) {
                 return true;
             } else if (id == R.id.nav_family) {
-                Toast.makeText(this, "Раздел 'Семья' скоро появится", Toast.LENGTH_SHORT).show();
+                startActivity(new Intent(MainActivity.this, FamilyActivity.class));
                 return false;
             } else if (id == R.id.nav_notifications) {
                 Toast.makeText(this, "Уведомления скоро появятся", Toast.LENGTH_SHORT).show();
@@ -85,6 +98,72 @@ public class MainActivity extends AppCompatActivity {
             }
             return false;
         });
+    }
+
+    private void loadCurrentUserData() {
+        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        FirebaseDatabase.getInstance().getReference().child("Users").child(uid)
+                .addValueEventListener(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            currentUserName = snapshot.child("username").getValue(String.class);
+                            currentFamilyId = snapshot.child("familyId").getValue(String.class);
+                            loadFamilyMembers();
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {}
+                });
+    }
+
+    private void loadFamilyMembers() {
+        if (currentFamilyId == null) return;
+        
+        FirebaseDatabase.getInstance().getReference().child("Families").child(currentFamilyId).child("members")
+                .addValueEventListener(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        familyMembers.clear();
+                        for (DataSnapshot memberSnap : snapshot.getChildren()) {
+                            String uid = memberSnap.getKey();
+                            fetchMemberDetails(uid);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {}
+                });
+    }
+
+    private void fetchMemberDetails(String uid) {
+        FirebaseDatabase.getInstance().getReference().child("Users").child(uid)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            Member member = new Member(
+                                    uid,
+                                    snapshot.child("username").getValue(String.class),
+                                    snapshot.child("email").getValue(String.class)
+                            );
+                            
+                            // Проверяем, нет ли уже такого участника
+                            boolean exists = false;
+                            for (Member m : familyMembers) {
+                                if (m.getUid().equals(uid)) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) familyMembers.add(member);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {}
+                });
     }
 
     private void setupAdapter() {
@@ -105,6 +184,13 @@ public class MainActivity extends AppCompatActivity {
                     updateDateUI(holder, model.getDueDate());
                 } else {
                     holder.binding.taskDateTv.setVisibility(View.GONE);
+                }
+
+                if (model.getAssignedBy() != null && !model.getAssignedBy().equals(FirebaseAuth.getInstance().getUid())) {
+                    holder.binding.taskAssignerTv.setVisibility(View.VISIBLE);
+                    holder.binding.taskAssignerTv.setText("От: " + model.getAssignedByName());
+                } else {
+                    holder.binding.taskAssignerTv.setVisibility(View.GONE);
                 }
 
                 holder.binding.taskCheckbox.setOnClickListener(v -> {
@@ -173,8 +259,22 @@ public class MainActivity extends AppCompatActivity {
         EditText titleEt = view.findViewById(R.id.task_title_et);
         EditText descEt = view.findViewById(R.id.task_desc_et);
         Button dateBtn = view.findViewById(R.id.set_date_btn);
+        Spinner assigneeSpinner = view.findViewById(R.id.assignee_spinner);
 
         selectedDueDate = 0;
+
+        // Настройка спиннера участников
+        List<String> memberNames = new ArrayList<>();
+        memberNames.add("Себе");
+        for (Member m : familyMembers) {
+            if (!m.getUid().equals(FirebaseAuth.getInstance().getUid())) {
+                memberNames.add(m.getUsername());
+            }
+        }
+
+        ArrayAdapter<String> spinnerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, memberNames);
+        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        assigneeSpinner.setAdapter(spinnerAdapter);
 
         dateBtn.setOnClickListener(v -> {
             Calendar c = Calendar.getInstance();
@@ -191,11 +291,39 @@ public class MainActivity extends AppCompatActivity {
         builder.setPositiveButton("Добавить", (dialog, which) -> {
             String title = titleEt.getText().toString();
             String desc = descEt.getText().toString();
+            int selectedIndex = assigneeSpinner.getSelectedItemPosition();
 
             if (!title.isEmpty()) {
-                String id = spaceRef.push().getKey();
-                Task newTask = new Task(id, title, desc, false, selectedDueDate);
-                spaceRef.child(id).setValue(newTask);
+                String targetUid;
+                if (selectedIndex == 0) {
+                    targetUid = FirebaseAuth.getInstance().getUid();
+                } else {
+                    // Находим UID выбранного участника
+                    String selectedName = memberNames.get(selectedIndex);
+                    targetUid = null;
+                    for (Member m : familyMembers) {
+                        if (m.getUsername().equals(selectedName)) {
+                            targetUid = m.getUid();
+                            break;
+                        }
+                    }
+                }
+
+                if (targetUid != null) {
+                    DatabaseReference targetRef = FirebaseDatabase.getInstance().getReference()
+                            .child("spaces")
+                            .child(targetUid)
+                            .child("tasks");
+                            
+                    String id = targetRef.push().getKey();
+                    Task newTask = new Task(id, title, desc, false, selectedDueDate, 
+                            FirebaseAuth.getInstance().getUid(), targetUid, currentUserName);
+                    targetRef.child(id).setValue(newTask);
+                    
+                    if (!targetUid.equals(FirebaseAuth.getInstance().getUid())) {
+                        Toast.makeText(this, "Задача назначена участнику " + memberNames.get(selectedIndex), Toast.LENGTH_SHORT).show();
+                    }
+                }
             } else {
                 Toast.makeText(this, "Введите название", Toast.LENGTH_SHORT).show();
             }

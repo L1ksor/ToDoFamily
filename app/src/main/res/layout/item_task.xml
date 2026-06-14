@@ -45,6 +45,20 @@
             app:layout_constraintTop_toBottomOf="@id/task_title_tv" />
 
         <TextView
+            android:id="@+id/task_assigner_tv"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="2dp"
+            android:text="От: Кто-то"
+            android:textColor="@color/blue"
+            android:textSize="12sp"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/task_checkbox"
+            app:layout_constraintTop_toBottomOf="@id/task_desc_tv" />
+
+        <TextView
             android:id="@+id/task_date_tv"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
