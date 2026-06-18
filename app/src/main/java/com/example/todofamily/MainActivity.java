@@ -60,18 +60,18 @@ public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
     private DatabaseReference spaceRef;
     private FirebaseRecyclerAdapter<Task, TaskViewHolder> adapter;
-    private String currentSpaceId; 
+    private String currentSpaceId;
     private String currentUserName;
     private String currentFamilyId;
     private long selectedDueDate = 0;
-    
+
     private List<Member> familyMembers = new ArrayList<>();
-    
+
     private Uri photoUri;
     private String currentProcessingTaskId;
     private String currentProcessingTaskTargetUid;
     private AlertDialog photoDialog;
-    
+
     private final ActivityResultLauncher<Intent> cameraLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
@@ -104,7 +104,7 @@ public class MainActivity extends AppCompatActivity {
         initCloudinary();
 
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        currentSpaceId = currentUserId; 
+        currentSpaceId = currentUserId;
 
         spaceRef = FirebaseDatabase.getInstance().getReference()
                 .child("spaces")
@@ -112,7 +112,7 @@ public class MainActivity extends AppCompatActivity {
                 .child("tasks");
 
         loadCurrentUserData();
-        
+
         binding.tasksRv.setLayoutManager(new WrapContentLinearLayoutManager(this));
 
         setupAdapter();
@@ -157,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadFamilyMembers() {
         if (currentFamilyId == null) return;
-        
+
         FirebaseDatabase.getInstance().getReference().child("Families").child(currentFamilyId).child("members")
                 .addValueEventListener(new ValueEventListener() {
                     @Override
@@ -185,8 +185,7 @@ public class MainActivity extends AppCompatActivity {
                                     snapshot.child("username").getValue(String.class),
                                     snapshot.child("email").getValue(String.class)
                             );
-                            
-                            // Проверяем, нет ли уже такого участника
+
                             boolean exists = false;
                             for (Member m : familyMembers) {
                                 if (m.getUid().equals(uid)) {
@@ -257,10 +256,16 @@ public class MainActivity extends AppCompatActivity {
 
                 holder.binding.taskCheckbox.setOnClickListener(v -> {
                     if (holder.binding.taskCheckbox.isChecked()) {
-                        // Открываем диалог для фото
-                        showPhotoReportDialog(model.getId(), currentSpaceId, model.isPhotoRequired());
-                        // Временно возвращаем в false, пока не загрузим фото
-                        holder.binding.taskCheckbox.setChecked(false);
+                        if (model.isPhotoRequired()) {
+                            // Если фото ОБЯЗАТЕЛЬНО — открываем диалог подтверждения
+                            showPhotoReportDialog(model.getId(), currentSpaceId, true);
+                            // Временно возвращаем чекбокс в false, пока фото не загрузится
+                            holder.binding.taskCheckbox.setChecked(false);
+                        } else {
+                            // Если фото НЕ ТРЕБУЕТСЯ — мгновенно закрываем задачу
+                            spaceRef.child(model.getId()).child("completed").setValue(true);
+                            Toast.makeText(MainActivity.this, "Задача выполнена!", Toast.LENGTH_SHORT).show();
+                        }
                     } else {
                         spaceRef.child(model.getId()).child("completed").setValue(false);
                     }
@@ -289,7 +294,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateDateUI(TaskViewHolder holder, long dueDate) {
         holder.binding.taskDateTv.setVisibility(View.VISIBLE);
-        
+
         Calendar now = Calendar.getInstance();
         now.set(Calendar.HOUR_OF_DAY, 0);
         now.set(Calendar.MINUTE, 0);
@@ -333,7 +338,6 @@ public class MainActivity extends AppCompatActivity {
 
         selectedDueDate = 0;
 
-        // Настройка спиннера участников
         List<String> memberNames = new ArrayList<>();
         memberNames.add("Себе");
         for (Member m : familyMembers) {
@@ -369,7 +373,6 @@ public class MainActivity extends AppCompatActivity {
                 if (selectedIndex == 0) {
                     targetUid = FirebaseAuth.getInstance().getUid();
                 } else {
-                    // Находим UID выбранного участника
                     String selectedName = memberNames.get(selectedIndex);
                     targetUid = null;
                     for (Member m : familyMembers) {
@@ -385,14 +388,13 @@ public class MainActivity extends AppCompatActivity {
                             .child("spaces")
                             .child(targetUid)
                             .child("tasks");
-                            
+
                     String id = targetRef.push().getKey();
-                    Task newTask = new Task(id, title, desc, false, selectedDueDate, 
+                    Task newTask = new Task(id, title, desc, false, selectedDueDate,
                             FirebaseAuth.getInstance().getUid(), targetUid, currentUserName);
                     newTask.setPhotoRequired(photoRequired);
                     targetRef.child(id).setValue(newTask);
 
-                    // Если задача выдана другому, дублируем в sent_tasks
                     if (!targetUid.equals(FirebaseAuth.getInstance().getUid())) {
                         FirebaseDatabase.getInstance().getReference()
                                 .child("sent_tasks")
@@ -421,14 +423,14 @@ public class MainActivity extends AppCompatActivity {
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setView(view)
-                .setPositiveButton("Завершить", null) // Обработка ниже
+                .setPositiveButton("Завершить", null)
                 .setNegativeButton("Отмена", null)
                 .setCancelable(true)
                 .create();
 
         dialog.setOnShowListener(d -> {
             Button positiveBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            positiveBtn.setEnabled(false); // Кнопка неактивна, пока нет фото
+            positiveBtn.setEnabled(false);
 
             positiveBtn.setOnClickListener(v -> {
                 if (photoUri != null) {
@@ -522,9 +524,9 @@ public class MainActivity extends AppCompatActivity {
 
         taskRef.updateChildren(updates).addOnCompleteListener(task -> {
             if (task.isSuccessful()) {
-                // Также обновляем в sent_tasks автора, если задача была назначена
+                // Исправлен путь: запрашиваем обновленный таск из "spaces", а не из "Users"
                 FirebaseDatabase.getInstance().getReference()
-                        .child("Users")
+                        .child("spaces")
                         .child(currentProcessingTaskTargetUid)
                         .child("tasks")
                         .child(currentProcessingTaskId)
@@ -555,7 +557,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // При возврате на главный экран убеждаемся, что выбрана иконка задач
         binding.bottomNavigation.setSelectedItemId(R.id.nav_tasks);
     }
 
