@@ -12,8 +12,22 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.Spinner;
 import android.widget.Toast;
+import android.net.Uri;
+import android.provider.MediaStore;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.FileProvider;
+import com.bumptech.glide.Glide;
+import com.cloudinary.android.MediaManager;
+import com.cloudinary.android.callback.ErrorInfo;
+import com.cloudinary.android.callback.UploadCallback;
+import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -52,6 +66,27 @@ public class MainActivity extends AppCompatActivity {
     private long selectedDueDate = 0;
     
     private List<Member> familyMembers = new ArrayList<>();
+    
+    private Uri photoUri;
+    private String currentProcessingTaskId;
+    private String currentProcessingTaskTargetUid;
+    private AlertDialog photoDialog;
+    
+    private final ActivityResultLauncher<Intent> cameraLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == RESULT_OK) {
+                    onPhotoSelected(photoUri);
+                }
+            });
+
+    private final ActivityResultLauncher<Intent> galleryLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                    onPhotoSelected(result.getData().getData());
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +100,8 @@ public class MainActivity extends AppCompatActivity {
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+
+        initCloudinary();
 
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
         currentSpaceId = currentUserId; 
@@ -166,6 +203,18 @@ public class MainActivity extends AppCompatActivity {
                 });
     }
 
+    private void initCloudinary() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("cloud_name", "dk0bba3k9");
+        config.put("api_key", "331839799785651");
+        config.put("api_secret", "Hexwy5GxfSRkWnX9vEGJPu19uOo");
+        try {
+            MediaManager.init(this, config);
+        } catch (IllegalStateException e) {
+            // Уже инициализировано
+        }
+    }
+
     private void setupAdapter() {
         Query query = spaceRef.orderByChild("completed").equalTo(false);
 
@@ -186,6 +235,13 @@ public class MainActivity extends AppCompatActivity {
                     holder.binding.taskDateTv.setVisibility(View.GONE);
                 }
 
+                if (model.getImageUrl() != null && !model.getImageUrl().isEmpty()) {
+                    holder.binding.taskPhotoIv.setVisibility(View.VISIBLE);
+                    Glide.with(MainActivity.this).load(model.getImageUrl()).into(holder.binding.taskPhotoIv);
+                } else {
+                    holder.binding.taskPhotoIv.setVisibility(View.GONE);
+                }
+
                 if (model.getAssignedBy() != null && !model.getAssignedBy().equals(FirebaseAuth.getInstance().getUid())) {
                     holder.binding.taskAssignerTv.setVisibility(View.VISIBLE);
                     holder.binding.taskAssignerTv.setText("От: " + model.getAssignedByName());
@@ -193,8 +249,21 @@ public class MainActivity extends AppCompatActivity {
                     holder.binding.taskAssignerTv.setVisibility(View.GONE);
                 }
 
+                if (model.isPhotoRequired()) {
+                    holder.binding.photoRequiredIc.setVisibility(View.VISIBLE);
+                } else {
+                    holder.binding.photoRequiredIc.setVisibility(View.GONE);
+                }
+
                 holder.binding.taskCheckbox.setOnClickListener(v -> {
-                    spaceRef.child(model.getId()).child("completed").setValue(holder.binding.taskCheckbox.isChecked());
+                    if (holder.binding.taskCheckbox.isChecked()) {
+                        // Открываем диалог для фото
+                        showPhotoReportDialog(model.getId(), currentSpaceId, model.isPhotoRequired());
+                        // Временно возвращаем в false, пока не загрузим фото
+                        holder.binding.taskCheckbox.setChecked(false);
+                    } else {
+                        spaceRef.child(model.getId()).child("completed").setValue(false);
+                    }
                 });
 
                 holder.itemView.setOnLongClickListener(v -> {
@@ -260,6 +329,7 @@ public class MainActivity extends AppCompatActivity {
         EditText descEt = view.findViewById(R.id.task_desc_et);
         Button dateBtn = view.findViewById(R.id.set_date_btn);
         Spinner assigneeSpinner = view.findViewById(R.id.assignee_spinner);
+        com.google.android.material.materialswitch.MaterialSwitch photoRequiredSwitch = view.findViewById(R.id.photo_required_switch);
 
         selectedDueDate = 0;
 
@@ -292,6 +362,7 @@ public class MainActivity extends AppCompatActivity {
             String title = titleEt.getText().toString();
             String desc = descEt.getText().toString();
             int selectedIndex = assigneeSpinner.getSelectedItemPosition();
+            boolean photoRequired = photoRequiredSwitch.isChecked();
 
             if (!title.isEmpty()) {
                 String targetUid;
@@ -318,9 +389,16 @@ public class MainActivity extends AppCompatActivity {
                     String id = targetRef.push().getKey();
                     Task newTask = new Task(id, title, desc, false, selectedDueDate, 
                             FirebaseAuth.getInstance().getUid(), targetUid, currentUserName);
+                    newTask.setPhotoRequired(photoRequired);
                     targetRef.child(id).setValue(newTask);
-                    
+
+                    // Если задача выдана другому, дублируем в sent_tasks
                     if (!targetUid.equals(FirebaseAuth.getInstance().getUid())) {
+                        FirebaseDatabase.getInstance().getReference()
+                                .child("sent_tasks")
+                                .child(FirebaseAuth.getInstance().getUid())
+                                .child(id)
+                                .setValue(newTask);
                         Toast.makeText(this, "Задача назначена участнику " + memberNames.get(selectedIndex), Toast.LENGTH_SHORT).show();
                     }
                 }
@@ -330,6 +408,148 @@ public class MainActivity extends AppCompatActivity {
         });
         builder.setNegativeButton("Отмена", null);
         builder.show();
+    }
+
+    private void showPhotoReportDialog(String taskId, String targetUid, boolean mandatory) {
+        currentProcessingTaskId = taskId;
+        currentProcessingTaskTargetUid = targetUid;
+
+        View view = getLayoutInflater().inflate(R.layout.dialog_attach_photo, null);
+        ImageView previewIv = view.findViewById(R.id.preview_iv);
+        Button cameraBtn = view.findViewById(R.id.camera_btn);
+        Button galleryBtn = view.findViewById(R.id.gallery_btn);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(view)
+                .setPositiveButton("Завершить", null) // Обработка ниже
+                .setNegativeButton("Отмена", null)
+                .setCancelable(true)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            Button positiveBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positiveBtn.setEnabled(false); // Кнопка неактивна, пока нет фото
+
+            positiveBtn.setOnClickListener(v -> {
+                if (photoUri != null) {
+                    uploadPhotoToCloudinary(photoUri);
+                    dialog.dismiss();
+                }
+            });
+        });
+
+        cameraBtn.setOnClickListener(v -> launchCamera());
+        galleryBtn.setOnClickListener(v -> launchGallery());
+
+        photoDialog = dialog;
+        dialog.show();
+    }
+
+    private void launchCamera() {
+        File photoFile = null;
+        try {
+            photoFile = createImageFile();
+        } catch (IOException ex) {
+            Toast.makeText(this, "Ошибка создания файла", Toast.LENGTH_SHORT).show();
+        }
+        if (photoFile != null) {
+            photoUri = FileProvider.getUriForFile(this, "com.example.todofamily.fileprovider", photoFile);
+            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+            cameraLauncher.launch(intent);
+        }
+    }
+
+    private void launchGallery() {
+        Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        galleryLauncher.launch(intent);
+    }
+
+    private File createImageFile() throws IOException {
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+        String imageFileName = "JPEG_" + timeStamp + "_";
+        File storageDir = getExternalFilesDir(null);
+        return File.createTempFile(imageFileName, ".jpg", storageDir);
+    }
+
+    private void onPhotoSelected(Uri uri) {
+        photoUri = uri;
+        if (photoDialog != null) {
+            ImageView previewIv = photoDialog.findViewById(R.id.preview_iv);
+            if (previewIv != null) {
+                previewIv.setImageURI(uri);
+            }
+            photoDialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+        }
+    }
+
+    private void uploadPhotoToCloudinary(Uri uri) {
+        Toast.makeText(this, "Загрузка фото...", Toast.LENGTH_SHORT).show();
+        MediaManager.get().upload(uri)
+                .callback(new UploadCallback() {
+                    @Override
+                    public void onStart(String requestId) {}
+
+                    @Override
+                    public void onProgress(String requestId, long bytes, long totalBytes) {}
+
+                    @Override
+                    public void onSuccess(String requestId, Map resultData) {
+                        String imageUrl = (String) resultData.get("secure_url");
+                        updateTaskCompletionWithPhoto(imageUrl);
+                    }
+
+                    @Override
+                    public void onError(String requestId, ErrorInfo error) {
+                        Toast.makeText(MainActivity.this, "Ошибка загрузки: " + error.getDescription(), Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
+                    public void onReschedule(String requestId, ErrorInfo error) {}
+                }).dispatch();
+    }
+
+    private void updateTaskCompletionWithPhoto(String imageUrl) {
+        DatabaseReference taskRef = FirebaseDatabase.getInstance().getReference()
+                .child("spaces")
+                .child(currentProcessingTaskTargetUid)
+                .child("tasks")
+                .child(currentProcessingTaskId);
+
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("completed", true);
+        updates.put("imageUrl", imageUrl);
+
+        taskRef.updateChildren(updates).addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                // Также обновляем в sent_tasks автора, если задача была назначена
+                FirebaseDatabase.getInstance().getReference()
+                        .child("Users")
+                        .child(currentProcessingTaskTargetUid)
+                        .child("tasks")
+                        .child(currentProcessingTaskId)
+                        .addListenerForSingleValueEvent(new ValueEventListener() {
+                            @Override
+                            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                                if (snapshot.exists()) {
+                                    Task updatedTask = snapshot.getValue(Task.class);
+                                    if (updatedTask != null && updatedTask.getAssignedBy() != null) {
+                                        FirebaseDatabase.getInstance().getReference()
+                                                .child("sent_tasks")
+                                                .child(updatedTask.getAssignedBy())
+                                                .child(updatedTask.getId())
+                                                .setValue(updatedTask);
+                                    }
+                                }
+                            }
+
+                            @Override
+                            public void onCancelled(@NonNull DatabaseError error) {}
+                        });
+
+                Toast.makeText(MainActivity.this, "Задача выполнена!", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     @Override

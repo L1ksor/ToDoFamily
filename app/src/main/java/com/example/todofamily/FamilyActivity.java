@@ -3,6 +3,7 @@ package com.example.todofamily;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -14,7 +15,6 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.todofamily.databinding.ActivityFamilyBinding;
@@ -61,6 +61,9 @@ public class FamilyActivity extends AppCompatActivity {
         binding.createFamilyBtn.setOnClickListener(v -> showCreateFamilyDialog());
         binding.joinFamilyBtn.setOnClickListener(v -> showJoinFamilyDialog());
         binding.copyIdBtn.setOnClickListener(v -> copyFamilyId());
+        
+        // Удаляем старую кнопку выданных задач
+        binding.viewSentTasksBtn.setVisibility(View.GONE);
     }
 
     private void setupRecyclerView() {
@@ -138,8 +141,19 @@ public class FamilyActivity extends AppCompatActivity {
                                     snapshot.child("username").getValue(String.class),
                                     snapshot.child("email").getValue(String.class)
                             );
-                            memberList.add(member);
-                            adapter.notifyDataSetChanged();
+                            
+                            // Проверяем на дубликаты перед добавлением
+                            boolean exists = false;
+                            for (int i = 0; i < memberList.size(); i++) {
+                                if (memberList.get(i).getUid().equals(uid)) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) {
+                                memberList.add(member);
+                                adapter.notifyDataSetChanged();
+                            }
                         }
                     }
 
@@ -224,7 +238,7 @@ public class FamilyActivity extends AppCompatActivity {
         return true;
     }
 
-    private static class MemberAdapter extends RecyclerView.Adapter<MemberViewHolder> {
+    private class MemberAdapter extends RecyclerView.Adapter<MemberViewHolder> {
         private List<Member> members;
 
         public MemberAdapter(List<Member> members) {
@@ -243,6 +257,43 @@ public class FamilyActivity extends AppCompatActivity {
             Member member = members.get(position);
             holder.nameTv.setText(member.getUsername());
             holder.emailTv.setText(member.getEmail());
+
+            // Слушаем количество активных задач участника, выданных ТЕКУЩИМ пользователем
+            FirebaseDatabase.getInstance().getReference()
+                    .child("spaces")
+                    .child(member.getUid())
+                    .child("tasks")
+                    .addValueEventListener(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(@NonNull DataSnapshot snapshot) {
+                            int count = 0;
+                            String myUid = FirebaseAuth.getInstance().getUid();
+                            for (DataSnapshot taskSnap : snapshot.getChildren()) {
+                                Boolean completed = taskSnap.child("completed").getValue(Boolean.class);
+                                String assignedBy = taskSnap.child("assignedBy").getValue(String.class);
+                                
+                                if (completed != null && !completed && myUid != null && myUid.equals(assignedBy)) {
+                                    count++;
+                                }
+                            }
+                            if (count > 0) {
+                                holder.taskCountTv.setVisibility(View.VISIBLE);
+                                holder.taskCountTv.setText(String.valueOf(count));
+                            } else {
+                                holder.taskCountTv.setVisibility(View.GONE);
+                            }
+                        }
+
+                        @Override
+                        public void onCancelled(@NonNull DatabaseError error) {}
+                    });
+
+            holder.itemView.setOnClickListener(v -> {
+                Intent intent = new Intent(FamilyActivity.this, MemberTasksActivity.class);
+                intent.putExtra("memberUid", member.getUid());
+                intent.putExtra("memberName", member.getUsername());
+                startActivity(intent);
+            });
         }
 
         @Override
@@ -252,11 +303,12 @@ public class FamilyActivity extends AppCompatActivity {
     }
 
     private static class MemberViewHolder extends RecyclerView.ViewHolder {
-        TextView nameTv, emailTv;
+        TextView nameTv, emailTv, taskCountTv;
         public MemberViewHolder(@NonNull View itemView) {
             super(itemView);
             nameTv = itemView.findViewById(R.id.member_name_tv);
             emailTv = itemView.findViewById(R.id.member_email_tv);
+            taskCountTv = itemView.findViewById(R.id.task_count_tv);
         }
     }
 }

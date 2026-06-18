@@ -9,6 +9,8 @@ public class Task {
     private String assignedBy;
     private String assignedTo;
     private String assignedByName;
+    private String imageUrl;
+    private boolean photoRequired;
 
     public Task() {
         // Пустой конструктор для Firebase
@@ -57,4 +59,10 @@ public class Task {
 
     public String getAssignedByName() { return assignedByName; }
     public void setAssignedByName(String assignedByName) { this.assignedByName = assignedByName; }
+
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+
+    public boolean isPhotoRequired() { return photoRequired; }
+    public void setPhotoRequired(boolean photoRequired) { this.photoRequired = photoRequired; }
 }

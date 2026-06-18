@@ -34,6 +34,13 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp" />
 
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/photo_required_switch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Требовать фотоотчёт" />
+
     <Button
         android:id="@+id/set_date_btn"
         style="@style/Widget.MaterialComponents.Button.TextButton"

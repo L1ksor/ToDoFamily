@@ -12,6 +12,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import com.bumptech.glide.Glide;
 import com.example.todofamily.databinding.ActivityProfileBinding;
 import com.example.todofamily.databinding.ItemTaskBinding;
 import com.example.todofamily.utils.WrapContentLinearLayoutManager;
@@ -111,6 +112,13 @@ public class ProfileActivity extends AppCompatActivity {
                     holder.binding.taskDateTv.setTextColor(ContextCompat.getColor(ProfileActivity.this, R.color.gray));
                 } else {
                     holder.binding.taskDateTv.setVisibility(View.GONE);
+                }
+
+                if (model.getImageUrl() != null && !model.getImageUrl().isEmpty()) {
+                    holder.binding.taskPhotoIv.setVisibility(View.VISIBLE);
+                    Glide.with(ProfileActivity.this).load(model.getImageUrl()).into(holder.binding.taskPhotoIv);
+                } else {
+                    holder.binding.taskPhotoIv.setVisibility(View.GONE);
                 }
 
                 if (model.getAssignedBy() != null && !model.getAssignedBy().equals(FirebaseAuth.getInstance().getUid())) {
