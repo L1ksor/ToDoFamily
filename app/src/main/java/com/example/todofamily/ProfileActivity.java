@@ -2,6 +2,18 @@ package com.example.todofamily;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.net.Uri;
+import android.provider.MediaStore;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.FileProvider;
+import com.cloudinary.android.MediaManager;
+import com.cloudinary.android.callback.ErrorInfo;
+import com.cloudinary.android.callback.UploadCallback;
+import java.io.File;
+import java.io.IOException;
+import java.util.Map;
+import java.util.HashMap;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -36,6 +48,23 @@ public class ProfileActivity extends AppCompatActivity {
     private ActivityProfileBinding binding;
     private DatabaseReference spaceRef;
     private FirebaseRecyclerAdapter<Task, MainActivity.TaskViewHolder> adapter;
+    private Uri avatarUri;
+
+    private final ActivityResultLauncher<Intent> cameraLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == RESULT_OK) {
+                    uploadAvatarToCloudinary(avatarUri);
+                }
+            });
+
+    private final ActivityResultLauncher<Intent> galleryLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                    uploadAvatarToCloudinary(result.getData().getData());
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +86,8 @@ public class ProfileActivity extends AppCompatActivity {
         loadUserInfo();
         setupHistoryAdapter();
 
+        binding.profileImage.setOnClickListener(v -> showAvatarSelectionDialog());
+
         binding.logoutBtn.setOnClickListener(v -> {
             FirebaseAuth.getInstance().signOut();
             Intent intent = new Intent(ProfileActivity.this, LoginActivity.class);
@@ -64,6 +95,12 @@ public class ProfileActivity extends AppCompatActivity {
             startActivity(intent);
             finish();
         });
+    }
+
+    private void showCustomToast(String message) {
+        android.widget.Toast toast = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT);
+        toast.setGravity(android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL, 0, 250);
+        toast.show();
     }
 
     private void loadUserInfo() {
@@ -80,12 +117,93 @@ public class ProfileActivity extends AppCompatActivity {
                             if (snapshot.exists()) {
                                 String username = snapshot.child("username").getValue(String.class);
                                 binding.usernameTv.setText(username);
+
+                                String avatarUrl = snapshot.child("avatarUrl").getValue(String.class);
+                                if (avatarUrl != null && !avatarUrl.isEmpty()) {
+                                    Glide.with(ProfileActivity.this)
+                                            .load(avatarUrl)
+                                            .circleCrop()
+                                            .into(binding.profileImage);
+                                }
                             }
                         }
 
                         @Override
                         public void onCancelled(@NonNull DatabaseError error) {
-                            Toast.makeText(ProfileActivity.this, "Ошибка загрузки данных", Toast.LENGTH_SHORT).show();
+                            showCustomToast("Ошибка загрузки данных");
+                        }
+                    });
+        }
+    }
+
+    private void showAvatarSelectionDialog() {
+        String[] options = {"Камера", "Галерея"};
+        new AlertDialog.Builder(this)
+                .setTitle("Сменить фото профиля")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) launchCamera();
+                    else launchGallery();
+                })
+                .show();
+    }
+
+    private void launchCamera() {
+        File photoFile = null;
+        try {
+            photoFile = createImageFile();
+        } catch (IOException ex) {
+            showCustomToast("Ошибка создания файла");
+        }
+        if (photoFile != null) {
+            avatarUri = FileProvider.getUriForFile(this, "com.example.todofamily.fileprovider", photoFile);
+            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, avatarUri);
+            cameraLauncher.launch(intent);
+        }
+    }
+
+    private void launchGallery() {
+        Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        galleryLauncher.launch(intent);
+    }
+
+    private File createImageFile() throws IOException {
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+        String imageFileName = "AVATAR_" + timeStamp + "_";
+        File storageDir = getExternalFilesDir(null);
+        return File.createTempFile(imageFileName, ".jpg", storageDir);
+    }
+
+    private void uploadAvatarToCloudinary(Uri uri) {
+        showCustomToast("Загрузка фото...");
+        MediaManager.get().upload(uri)
+                .callback(new UploadCallback() {
+                    @Override
+                    public void onStart(String requestId) {}
+                    @Override
+                    public void onProgress(String requestId, long bytes, long totalBytes) {}
+                    @Override
+                    public void onSuccess(String requestId, Map resultData) {
+                        String imageUrl = (String) resultData.get("secure_url");
+                        saveAvatarUrlToDatabase(imageUrl);
+                    }
+                    @Override
+                    public void onError(String requestId, ErrorInfo error) {
+                        showCustomToast("Ошибка: " + error.getDescription());
+                    }
+                    @Override
+                    public void onReschedule(String requestId, ErrorInfo error) {}
+                }).dispatch();
+    }
+
+    private void saveAvatarUrlToDatabase(String url) {
+        String uid = FirebaseAuth.getInstance().getUid();
+        if (uid != null) {
+            FirebaseDatabase.getInstance().getReference().child("Users").child(uid).child("avatarUrl").setValue(url)
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            showCustomToast("Аватар обновлен");
+                            Glide.with(ProfileActivity.this).load(url).circleCrop().into(binding.profileImage);
                         }
                     });
         }
@@ -126,6 +244,12 @@ public class ProfileActivity extends AppCompatActivity {
                     holder.binding.taskAssignerTv.setText("От: " + model.getAssignedByName());
                 } else {
                     holder.binding.taskAssignerTv.setVisibility(View.GONE);
+                }
+
+                if (model.isPhotoRequired()) {
+                    holder.binding.photoRequiredIc.setVisibility(View.VISIBLE);
+                } else {
+                    holder.binding.photoRequiredIc.setVisibility(View.GONE);
                 }
 
                 holder.binding.taskCheckbox.setOnClickListener(v -> {

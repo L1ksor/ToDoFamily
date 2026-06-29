@@ -1,12 +1,15 @@
 package com.example.todofamily.utils;
 
+import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Build;
 
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
-import com.example.todofamily.R;
+import androidx.core.app.NotificationManagerCompat;
 
 public class NotificationHelper {
 
@@ -28,6 +31,11 @@ public class NotificationHelper {
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true);
 
-        notificationManager.notify((int) System.currentTimeMillis(), builder.build());
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            notificationManager.notify((int) System.currentTimeMillis(), builder.build());
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            // Для версий ниже Android 13 разрешение не требуется
+            notificationManager.notify((int) System.currentTimeMillis(), builder.build());
+        }
     }
 }

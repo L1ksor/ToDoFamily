@@ -14,6 +14,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.Spinner;
+import android.app.TimePickerDialog;
 import android.widget.Toast;
 import android.net.Uri;
 import android.provider.MediaStore;
@@ -39,6 +40,7 @@ import com.example.todofamily.databinding.ActivityMainBinding;
 import com.example.todofamily.databinding.ItemTaskBinding;
 import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.firebase.ui.database.FirebaseRecyclerOptions;
+import com.example.todofamily.utils.NotificationHelper;
 import com.example.todofamily.utils.WrapContentLinearLayoutManager;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
@@ -117,7 +119,9 @@ public class MainActivity extends AppCompatActivity {
 
         setupAdapter();
 
-        binding.addTaskFab.setOnClickListener(v -> showAddTaskDialog());
+        binding.addTaskFab.setOnClickListener(v -> showAddTaskDialog(null));
+
+        setupNotificationsListener();
 
         binding.bottomNavigation.setOnItemSelectedListener(item -> {
             int id = item.getItemId();
@@ -127,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(new Intent(MainActivity.this, FamilyActivity.class));
                 return false;
             } else if (id == R.id.nav_notifications) {
-                Toast.makeText(this, "Уведомления скоро появятся", Toast.LENGTH_SHORT).show();
+                startActivity(new Intent(MainActivity.this, NotificationsActivity.class));
                 return false;
             } else if (id == R.id.nav_profile) {
                 startActivity(new Intent(MainActivity.this, ProfileActivity.class));
@@ -135,6 +139,119 @@ public class MainActivity extends AppCompatActivity {
             }
             return false;
         });
+    }
+
+    private void sendNotification(String toUid, String title, String message, String type) {
+        if (toUid == null) return;
+        DatabaseReference ref = FirebaseDatabase.getInstance().getReference().child("notifications").child(toUid);
+        String id = ref.push().getKey();
+        Notification notification = new Notification(id, title, message, System.currentTimeMillis(), type);
+        if (id != null) ref.child(id).setValue(notification);
+    }
+
+    private void setupNotificationsListener() {
+        String uid = FirebaseAuth.getInstance().getUid();
+        if (uid == null) return;
+
+        DatabaseReference notificationsRef = FirebaseDatabase.getInstance().getReference().child("notifications").child(uid);
+        notificationsRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                for (DataSnapshot notifSnap : snapshot.getChildren()) {
+                    Boolean notified = notifSnap.child("notifiedLocally").getValue(Boolean.class);
+                    if (notified == null || !notified) {
+                        String title = notifSnap.child("title").getValue(String.class);
+                        String message = notifSnap.child("message").getValue(String.class);
+                        
+                        NotificationHelper.showNotification(MainActivity.this, title, message);
+                        
+                        // Помечаем как показанное локально
+                        notifSnap.getRef().child("notifiedLocally").setValue(true);
+                    }
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {}
+        });
+    }
+
+    private void updateSentTaskStatus(String taskId, boolean completed, int status, String imageUrl) {
+        FirebaseDatabase.getInstance().getReference()
+                .child("spaces")
+                .child(currentSpaceId)
+                .child("tasks")
+                .child(taskId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            Task task = snapshot.getValue(Task.class);
+                            if (task != null) {
+                                if (completed && task.getRepeatType() > 0 && status == 3) {
+                                    handleRecurringTask(task);
+                                }
+
+                                if (task.getAssignedBy() != null) {
+                                    Map<String, Object> updates = new HashMap<>();
+                                    updates.put("completed", completed);
+                                    updates.put("status", status);
+                                    if (imageUrl != null) updates.put("imageUrl", imageUrl);
+                                    
+                                    FirebaseDatabase.getInstance().getReference()
+                                            .child("sent_tasks")
+                                            .child(task.getAssignedBy())
+                                            .child(task.getId())
+                                            .updateChildren(updates);
+                                }
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {}
+                });
+    }
+
+    private void handleRecurringTask(Task completedTask) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(completedTask.getDueDate());
+        
+        switch (completedTask.getRepeatType()) {
+            case 1: cal.add(Calendar.DAY_OF_YEAR, 1); break;
+            case 2: cal.add(Calendar.WEEK_OF_YEAR, 1); break;
+            case 3: cal.add(Calendar.MONTH, 1); break;
+        }
+
+        DatabaseReference targetRef = FirebaseDatabase.getInstance().getReference()
+                .child("spaces")
+                .child(completedTask.getAssignedTo())
+                .child("tasks");
+
+        String newId = targetRef.push().getKey();
+        Task nextTask = new Task(newId, completedTask.getTitle(), completedTask.getDescription(),
+                false, cal.getTimeInMillis(), completedTask.getAssignedBy(),
+                completedTask.getAssignedTo(), completedTask.getAssignedByName());
+        nextTask.setPhotoRequired(completedTask.isPhotoRequired());
+        nextTask.setRepeatType(completedTask.getRepeatType());
+        nextTask.setStatus(0);
+
+        targetRef.child(newId).setValue(nextTask);
+
+        if (!completedTask.getAssignedBy().equals(completedTask.getAssignedTo())) {
+            FirebaseDatabase.getInstance().getReference()
+                    .child("sent_tasks")
+                    .child(completedTask.getAssignedBy())
+                    .child(newId)
+                    .setValue(nextTask);
+        }
+    }
+
+    private void showCustomToast(String message) {
+        Toast toast = Toast.makeText(this, message, Toast.LENGTH_SHORT);
+        // Смещаем выше нижней панели
+        toast.setGravity(android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL, 0, 250);
+        toast.show();
     }
 
     private void loadCurrentUserData() {
@@ -254,20 +371,60 @@ public class MainActivity extends AppCompatActivity {
                     holder.binding.photoRequiredIc.setVisibility(View.GONE);
                 }
 
+                if (model.getStatus() == 2) { // REJECTED
+                    holder.binding.rejectionCommentTv.setVisibility(View.VISIBLE);
+                    holder.binding.rejectionCommentTv.setText("Отклонено: " + model.getRejectionComment());
+                } else {
+                    holder.binding.rejectionCommentTv.setVisibility(View.GONE);
+                }
+
                 holder.binding.taskCheckbox.setOnClickListener(v -> {
+                    String myUid = FirebaseAuth.getInstance().getUid();
                     if (holder.binding.taskCheckbox.isChecked()) {
                         if (model.isPhotoRequired()) {
-                            // Если фото ОБЯЗАТЕЛЬНО — открываем диалог подтверждения
                             showPhotoReportDialog(model.getId(), currentSpaceId, true);
-                            // Временно возвращаем чекбокс в false, пока фото не загрузится
                             holder.binding.taskCheckbox.setChecked(false);
                         } else {
-                            // Если фото НЕ ТРЕБУЕТСЯ — мгновенно закрываем задачу
-                            spaceRef.child(model.getId()).child("completed").setValue(true);
-                            Toast.makeText(MainActivity.this, "Задача выполнена!", Toast.LENGTH_SHORT).show();
+                            // Если фото не нужно
+                            boolean needsApproval = model.getAssignedBy() != null && !model.getAssignedBy().equals(myUid);
+                            int nextStatus = needsApproval ? 1 : 3; // 1: WAITING_APPROVAL, 3: COMPLETED
+                            
+                            Map<String, Object> updates = new HashMap<>();
+                            updates.put("completed", true);
+                            updates.put("status", nextStatus);
+                            
+                            spaceRef.child(model.getId()).updateChildren(updates);
+                            
+                            // Обработка повтора для личных задач без фото
+                            if (!needsApproval && model.getRepeatType() > 0) {
+                                handleRecurringTask(model);
+                            }
+
+                            updateSentTaskStatus(model.getId(), true, nextStatus, null);
+                            
+                            // Уведомление автору
+                            if (needsApproval || (model.getAssignedBy() != null && !model.getAssignedBy().equals(myUid))) {
+                                sendNotification(model.getAssignedBy(), 
+                                    needsApproval ? "Задание на проверке" : "Задание выполнено",
+                                    currentUserName + (needsApproval ? " прислал отчет: " : " выполнил: ") + model.getTitle(),
+                                    needsApproval ? "TASK_WAITING_APPROVAL" : "TASK_COMPLETED");
+                            }
+                            
+                            showCustomToast(needsApproval ? "Отправлено на проверку" : "Задача выполнена!");
                         }
                     } else {
                         spaceRef.child(model.getId()).child("completed").setValue(false);
+                        spaceRef.child(model.getId()).child("status").setValue(0);
+                        updateSentTaskStatus(model.getId(), false, 0, null);
+                    }
+                });
+
+                holder.itemView.setOnClickListener(v -> {
+                    String myUid = FirebaseAuth.getInstance().getUid();
+                    // Редактирование только своих задач
+                    if (model.getAssignedTo() != null && model.getAssignedTo().equals(myUid) && 
+                        model.getAssignedBy() != null && model.getAssignedBy().equals(myUid)) {
+                        showAddTaskDialog(model);
                     }
                 });
 
@@ -294,50 +451,91 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateDateUI(TaskViewHolder holder, long dueDate) {
         holder.binding.taskDateTv.setVisibility(View.VISIBLE);
-
+        
         Calendar now = Calendar.getInstance();
-        now.set(Calendar.HOUR_OF_DAY, 0);
-        now.set(Calendar.MINUTE, 0);
-        now.set(Calendar.SECOND, 0);
-        now.set(Calendar.MILLISECOND, 0);
-        long todayStart = now.getTimeInMillis();
+        long todayStart = getDayStart(now);
 
-        Calendar taskDate = Calendar.getInstance();
-        taskDate.setTimeInMillis(dueDate);
-        taskDate.set(Calendar.HOUR_OF_DAY, 0);
-        taskDate.set(Calendar.MINUTE, 0);
-        taskDate.set(Calendar.SECOND, 0);
-        taskDate.set(Calendar.MILLISECOND, 0);
-        long taskDayStart = taskDate.getTimeInMillis();
+        Calendar taskCal = Calendar.getInstance();
+        taskCal.setTimeInMillis(dueDate);
+        long taskDayStart = getDayStart(taskCal);
 
-        SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
-        String dateText = sdf.format(new Date(dueDate));
+        SimpleDateFormat timeSdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+        String timeStr = timeSdf.format(new Date(dueDate));
 
-        if (taskDayStart < todayStart) {
-            holder.binding.taskDateTv.setText(dateText);
+        SimpleDateFormat dateSdf = new SimpleDateFormat("dd.MM", Locale.getDefault());
+        String dateStr = dateSdf.format(new Date(dueDate));
+
+        String displayStr;
+        if (taskDayStart == todayStart) {
+            displayStr = "Сегодня " + timeStr;
+        } else if (taskDayStart == todayStart + 86400000) {
+            displayStr = "Завтра " + timeStr;
+        } else {
+            displayStr = dateStr + " " + timeStr;
+        }
+        
+        holder.binding.taskDateTv.setText(displayStr);
+
+        if (dueDate < System.currentTimeMillis()) {
             holder.binding.taskDateTv.setTextColor(ContextCompat.getColor(MainActivity.this, R.color.red));
         } else if (taskDayStart == todayStart) {
-            holder.binding.taskDateTv.setText("Сегодня");
             holder.binding.taskDateTv.setTextColor(ContextCompat.getColor(MainActivity.this, R.color.yellow));
         } else {
-            holder.binding.taskDateTv.setText(dateText);
             holder.binding.taskDateTv.setTextColor(ContextCompat.getColor(MainActivity.this, R.color.green));
         }
     }
 
-    private void showAddTaskDialog() {
+    private long getDayStart(Calendar cal) {
+        Calendar c = (Calendar) cal.clone();
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
+    private void showAddTaskDialog(Task taskToEdit) {
+        boolean isEdit = taskToEdit != null;
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Новая задача");
+        builder.setTitle(isEdit ? "Редактировать задачу" : "Новая задача");
 
         View view = getLayoutInflater().inflate(R.layout.dialog_add_task, null);
         EditText titleEt = view.findViewById(R.id.task_title_et);
         EditText descEt = view.findViewById(R.id.task_desc_et);
         Button dateBtn = view.findViewById(R.id.set_date_btn);
+        Button timeBtn = view.findViewById(R.id.set_time_btn);
         Spinner assigneeSpinner = view.findViewById(R.id.assignee_spinner);
+        Spinner repeatSpinner = view.findViewById(R.id.repeat_spinner);
         com.google.android.material.materialswitch.MaterialSwitch photoRequiredSwitch = view.findViewById(R.id.photo_required_switch);
 
-        selectedDueDate = 0;
+        // Настройка спиннера повтора
+        String[] repeatOptions = {"Без повтора", "Ежедневно", "Еженедельно", "Ежемесячно"};
+        ArrayAdapter<String> repeatAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, repeatOptions);
+        repeatAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        repeatSpinner.setAdapter(repeatAdapter);
 
+        final Calendar selectedCalendar = Calendar.getInstance();
+        if (isEdit) {
+            titleEt.setText(taskToEdit.getTitle());
+            descEt.setText(taskToEdit.getDescription());
+            photoRequiredSwitch.setChecked(taskToEdit.isPhotoRequired());
+            selectedDueDate = taskToEdit.getDueDate();
+            if (selectedDueDate > 0) {
+                selectedCalendar.setTimeInMillis(selectedDueDate);
+                SimpleDateFormat dateSdf = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
+                SimpleDateFormat timeSdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+                dateBtn.setText(dateSdf.format(selectedCalendar.getTime()));
+                timeBtn.setText(timeSdf.format(selectedCalendar.getTime()));
+            }
+            repeatSpinner.setSelection(taskToEdit.getRepeatType());
+            assigneeSpinner.setVisibility(View.GONE);
+            View label = view.findViewById(R.id.assignee_label); 
+            if (label != null) label.setVisibility(View.GONE);
+        } else {
+            selectedDueDate = 0;
+        }
+
+        // Настройка спиннера участников
         List<String> memberNames = new ArrayList<>();
         memberNames.add("Себе");
         for (Member m : familyMembers) {
@@ -351,27 +549,43 @@ public class MainActivity extends AppCompatActivity {
         assigneeSpinner.setAdapter(spinnerAdapter);
 
         dateBtn.setOnClickListener(v -> {
-            Calendar c = Calendar.getInstance();
             new DatePickerDialog(this, (view1, year, month, dayOfMonth) -> {
-                Calendar selected = Calendar.getInstance();
-                selected.set(year, month, dayOfMonth);
-                selectedDueDate = selected.getTimeInMillis();
+                selectedCalendar.set(Calendar.YEAR, year);
+                selectedCalendar.set(Calendar.MONTH, month);
+                selectedCalendar.set(Calendar.DAY_OF_MONTH, dayOfMonth);
+                selectedDueDate = selectedCalendar.getTimeInMillis();
                 SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy", Locale.getDefault());
-                dateBtn.setText(sdf.format(selected.getTime()));
-            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show();
+                dateBtn.setText(sdf.format(selectedCalendar.getTime()));
+            }, selectedCalendar.get(Calendar.YEAR), selectedCalendar.get(Calendar.MONTH), selectedCalendar.get(Calendar.DAY_OF_MONTH)).show();
+        });
+
+        timeBtn.setOnClickListener(v -> {
+            new TimePickerDialog(this, (view1, hourOfDay, minute) -> {
+                selectedCalendar.set(Calendar.HOUR_OF_DAY, hourOfDay);
+                selectedCalendar.set(Calendar.MINUTE, minute);
+                selectedCalendar.set(Calendar.SECOND, 0);
+                selectedCalendar.set(Calendar.MILLISECOND, 0);
+                selectedDueDate = selectedCalendar.getTimeInMillis();
+                SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+                timeBtn.setText(sdf.format(selectedCalendar.getTime()));
+            }, selectedCalendar.get(Calendar.HOUR_OF_DAY), selectedCalendar.get(Calendar.MINUTE), true).show();
         });
 
         builder.setView(view);
-        builder.setPositiveButton("Добавить", (dialog, which) -> {
+        builder.setPositiveButton(isEdit ? "Сохранить" : "Добавить", (dialog, which) -> {
             String title = titleEt.getText().toString();
             String desc = descEt.getText().toString();
             int selectedIndex = assigneeSpinner.getSelectedItemPosition();
+            int repeatType = repeatSpinner.getSelectedItemPosition();
             boolean photoRequired = photoRequiredSwitch.isChecked();
 
             if (!title.isEmpty()) {
+                String myUid = FirebaseAuth.getInstance().getUid();
                 String targetUid;
-                if (selectedIndex == 0) {
-                    targetUid = FirebaseAuth.getInstance().getUid();
+                if (isEdit) {
+                    targetUid = myUid;
+                } else if (selectedIndex == 0) {
+                    targetUid = myUid;
                 } else {
                     String selectedName = memberNames.get(selectedIndex);
                     targetUid = null;
@@ -389,19 +603,23 @@ public class MainActivity extends AppCompatActivity {
                             .child(targetUid)
                             .child("tasks");
 
-                    String id = targetRef.push().getKey();
+                    String id = isEdit ? taskToEdit.getId() : targetRef.push().getKey();
                     Task newTask = new Task(id, title, desc, false, selectedDueDate,
-                            FirebaseAuth.getInstance().getUid(), targetUid, currentUserName);
+                            myUid, targetUid, currentUserName);
                     newTask.setPhotoRequired(photoRequired);
+                    newTask.setStatus(isEdit ? taskToEdit.getStatus() : 0);
+                    newTask.setRepeatType(repeatType);
                     targetRef.child(id).setValue(newTask);
 
-                    if (!targetUid.equals(FirebaseAuth.getInstance().getUid())) {
+                    if (!targetUid.equals(myUid)) {
                         FirebaseDatabase.getInstance().getReference()
                                 .child("sent_tasks")
-                                .child(FirebaseAuth.getInstance().getUid())
+                                .child(myUid)
                                 .child(id)
                                 .setValue(newTask);
-                        Toast.makeText(this, "Задача назначена участнику " + memberNames.get(selectedIndex), Toast.LENGTH_SHORT).show();
+                        showCustomToast(isEdit ? "Изменено" : "Задача назначена участнику " + memberNames.get(selectedIndex));
+                    } else if (isEdit) {
+                        showCustomToast("Обновлено");
                     }
                 }
             } else {
@@ -486,7 +704,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void uploadPhotoToCloudinary(Uri uri) {
-        Toast.makeText(this, "Загрузка фото...", Toast.LENGTH_SHORT).show();
+        showCustomToast("Загрузка фото...");
         MediaManager.get().upload(uri)
                 .callback(new UploadCallback() {
                     @Override
@@ -503,7 +721,7 @@ public class MainActivity extends AppCompatActivity {
 
                     @Override
                     public void onError(String requestId, ErrorInfo error) {
-                        Toast.makeText(MainActivity.this, "Ошибка загрузки: " + error.getDescription(), Toast.LENGTH_SHORT).show();
+                        showCustomToast("Ошибка загрузки: " + error.getDescription());
                     }
 
                     @Override
@@ -518,39 +736,41 @@ public class MainActivity extends AppCompatActivity {
                 .child("tasks")
                 .child(currentProcessingTaskId);
 
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("completed", true);
-        updates.put("imageUrl", imageUrl);
+        taskRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    Task task = snapshot.getValue(Task.class);
+                    if (task != null) {
+                        String myUid = FirebaseAuth.getInstance().getUid();
+                        boolean needsApproval = task.getAssignedBy() != null && !task.getAssignedBy().equals(myUid);
+                        int nextStatus = needsApproval ? 1 : 3;
 
-        taskRef.updateChildren(updates).addOnCompleteListener(task -> {
-            if (task.isSuccessful()) {
-                // Исправлен путь: запрашиваем обновленный таск из "spaces", а не из "Users"
-                FirebaseDatabase.getInstance().getReference()
-                        .child("spaces")
-                        .child(currentProcessingTaskTargetUid)
-                        .child("tasks")
-                        .child(currentProcessingTaskId)
-                        .addListenerForSingleValueEvent(new ValueEventListener() {
-                            @Override
-                            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                                if (snapshot.exists()) {
-                                    Task updatedTask = snapshot.getValue(Task.class);
-                                    if (updatedTask != null && updatedTask.getAssignedBy() != null) {
-                                        FirebaseDatabase.getInstance().getReference()
-                                                .child("sent_tasks")
-                                                .child(updatedTask.getAssignedBy())
-                                                .child(updatedTask.getId())
-                                                .setValue(updatedTask);
-                                    }
+                        Map<String, Object> updates = new HashMap<>();
+                        updates.put("completed", true);
+                        updates.put("status", nextStatus);
+                        updates.put("imageUrl", imageUrl);
+
+                        taskRef.updateChildren(updates).addOnCompleteListener(t -> {
+                            if (t.isSuccessful()) {
+                                updateSentTaskStatus(currentProcessingTaskId, true, nextStatus, imageUrl);
+                                
+                                if (needsApproval) {
+                                    sendNotification(task.getAssignedBy(),
+                                        "Задание на проверке",
+                                        currentUserName + " прислал отчет: " + task.getTitle(),
+                                        "TASK_WAITING_APPROVAL");
                                 }
+
+                                showCustomToast(needsApproval ? "Отправлено на проверку" : "Задача выполнена!");
                             }
-
-                            @Override
-                            public void onCancelled(@NonNull DatabaseError error) {}
                         });
-
-                Toast.makeText(MainActivity.this, "Задача выполнена!", Toast.LENGTH_SHORT).show();
+                    }
+                }
             }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {}
         });
     }
 

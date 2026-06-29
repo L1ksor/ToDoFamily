@@ -11,6 +11,9 @@ public class Task {
     private String assignedByName;
     private String imageUrl;
     private boolean photoRequired;
+    private int status; // 0: PENDING, 1: WAITING_APPROVAL, 2: REJECTED, 3: COMPLETED
+    private String rejectionComment;
+    private int repeatType; // 0: None, 1: Daily, 2: Weekly, 3: Monthly
 
     public Task() {
         // Пустой конструктор для Firebase
@@ -65,4 +68,13 @@ public class Task {
 
     public boolean isPhotoRequired() { return photoRequired; }
     public void setPhotoRequired(boolean photoRequired) { this.photoRequired = photoRequired; }
+
+    public int getStatus() { return status; }
+    public void setStatus(int status) { this.status = status; }
+
+    public String getRejectionComment() { return rejectionComment; }
+    public void setRejectionComment(String rejectionComment) { this.rejectionComment = rejectionComment; }
+
+    public int getRepeatType() { return repeatType; }
+    public void setRepeatType(int repeatType) { this.repeatType = repeatType; }
 }

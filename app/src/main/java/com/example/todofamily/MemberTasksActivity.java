@@ -19,6 +19,9 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.Query;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class MemberTasksActivity extends AppCompatActivity {
 
     private ActivityMemberTasksBinding binding;
@@ -84,6 +87,22 @@ public class MemberTasksActivity extends AppCompatActivity {
                 } else {
                     holder.binding.photoRequiredIc.setVisibility(View.GONE);
                 }
+
+                // Логика проверки (Approval)
+                if (model.getStatus() == 1) { // WAITING_APPROVAL
+                    holder.binding.approvalLayout.setVisibility(View.VISIBLE);
+                    holder.binding.approveBtn.setOnClickListener(v -> approveTask(model));
+                    holder.binding.rejectBtn.setOnClickListener(v -> showRejectDialog(model));
+                } else {
+                    holder.binding.approvalLayout.setVisibility(View.GONE);
+                }
+                
+                if (model.getStatus() == 2) {
+                    holder.binding.rejectionCommentTv.setVisibility(View.VISIBLE);
+                    holder.binding.rejectionCommentTv.setText("Вы отклонили: " + model.getRejectionComment());
+                } else {
+                    holder.binding.rejectionCommentTv.setVisibility(View.GONE);
+                }
             }
 
             @NonNull
@@ -95,6 +114,77 @@ public class MemberTasksActivity extends AppCompatActivity {
         };
 
         binding.memberTasksRv.setAdapter(adapter);
+    }
+
+    private void approveTask(Task task) {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("status", 3); // COMPLETED
+        updates.put("completed", true);
+        updates.put("rejectionComment", null);
+
+        memberTasksRef.child(task.getId()).updateChildren(updates).addOnCompleteListener(t -> {
+            if (t.isSuccessful()) {
+                // Обновляем в sent_tasks автора
+                FirebaseDatabase.getInstance().getReference()
+                        .child("sent_tasks")
+                        .child(task.getAssignedBy())
+                        .child(task.getId())
+                        .updateChildren(updates);
+                
+                // Уведомление исполнителю
+                sendNotification(task.getAssignedTo(), 
+                    "Задание принято", 
+                    "Ваш отчет по задаче '" + task.getTitle() + "' принят!", 
+                    "TASK_APPROVED");
+            }
+        });
+    }
+
+    private void sendNotification(String toUid, String title, String message, String type) {
+        if (toUid == null) return;
+        DatabaseReference ref = FirebaseDatabase.getInstance().getReference().child("notifications").child(toUid);
+        String id = ref.push().getKey();
+        Notification notification = new Notification(id, title, message, System.currentTimeMillis(), type);
+        if (id != null) ref.child(id).setValue(notification);
+    }
+
+    private void showRejectDialog(Task task) {
+        View view = getLayoutInflater().inflate(R.layout.dialog_edit_text, null);
+        android.widget.EditText et = view.findViewById(R.id.dialog_et);
+        et.setHint("Причина отклонения");
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Отклонить задачу")
+                .setView(view)
+                .setPositiveButton("Отправить", (dialog, which) -> {
+                    String comment = et.getText().toString().trim();
+                    rejectTask(task, comment);
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void rejectTask(Task task, String comment) {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("status", 2); // REJECTED
+        updates.put("completed", false);
+        updates.put("rejectionComment", comment);
+
+        memberTasksRef.child(task.getId()).updateChildren(updates).addOnCompleteListener(t -> {
+            if (t.isSuccessful()) {
+                FirebaseDatabase.getInstance().getReference()
+                        .child("sent_tasks")
+                        .child(task.getAssignedBy())
+                        .child(task.getId())
+                        .updateChildren(updates);
+                
+                // Уведомление исполнителю
+                sendNotification(task.getAssignedTo(), 
+                    "Задача отклонена", 
+                    "Ваше задание '" + task.getTitle() + "' отклонено: " + comment, 
+                    "TASK_REJECTED");
+            }
+        });
     }
 
     @Override

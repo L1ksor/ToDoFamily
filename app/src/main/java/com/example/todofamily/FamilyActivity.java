@@ -9,6 +9,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,6 +18,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.bumptech.glide.Glide;
 import com.example.todofamily.databinding.ActivityFamilyBinding;
 import com.example.todofamily.utils.WrapContentLinearLayoutManager;
 import com.google.firebase.auth.FirebaseAuth;
@@ -47,7 +49,7 @@ public class FamilyActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         if (getSupportActionBar() != null) {
-            getSupportActionBar().setTitle("Моя Семья");
+            getSupportActionBar().setTitle("Моя Группа");
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
 
@@ -62,6 +64,8 @@ public class FamilyActivity extends AppCompatActivity {
         binding.joinFamilyBtn.setOnClickListener(v -> showJoinFamilyDialog());
         binding.copyIdBtn.setOnClickListener(v -> copyFamilyId());
         
+        binding.leaveFamilyBtn.setOnClickListener(v -> showLeaveFamilyDialog());
+
         // Удаляем старую кнопку выданных задач
         binding.viewSentTasksBtn.setVisibility(View.GONE);
     }
@@ -139,7 +143,8 @@ public class FamilyActivity extends AppCompatActivity {
                             Member member = new Member(
                                     uid,
                                     snapshot.child("username").getValue(String.class),
-                                    snapshot.child("email").getValue(String.class)
+                                    snapshot.child("email").getValue(String.class),
+                                    snapshot.child("avatarUrl").getValue(String.class)
                             );
                             
                             // Проверяем на дубликаты перед добавлением
@@ -165,10 +170,10 @@ public class FamilyActivity extends AppCompatActivity {
     private void showCreateFamilyDialog() {
         View view = getLayoutInflater().inflate(R.layout.dialog_edit_text, null);
         EditText et = view.findViewById(R.id.dialog_et);
-        et.setHint("Название семьи");
+        et.setHint("Название группы");
 
         new AlertDialog.Builder(this)
-                .setTitle("Создать семью")
+                .setTitle("Создать группу")
                 .setView(view)
                 .setPositiveButton("Создать", (dialog, which) -> {
                     String name = et.getText().toString().trim();
@@ -180,22 +185,39 @@ public class FamilyActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void showCustomToast(String message) {
+        Toast toast = Toast.makeText(this, message, Toast.LENGTH_SHORT);
+        toast.setGravity(android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL, 0, 250);
+        toast.show();
+    }
+
     private void createFamily(String name) {
-        String familyId = familyRef.push().getKey();
+        String familyId = generateShortId();
         familyRef.child(familyId).child("name").setValue(name);
         familyRef.child(familyId).child("members").child(currentUserId).setValue(true);
         
         userRef.child("familyId").setValue(familyId);
-        Toast.makeText(this, "Семья создана!", Toast.LENGTH_SHORT).show();
+        showCustomToast("Группа создана!");
+    }
+
+    private String generateShortId() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        StringBuilder sb = new StringBuilder();
+        java.util.Random rnd = new java.util.Random();
+        while (sb.length() < 8) {
+            int index = (int) (rnd.nextFloat() * chars.length());
+            sb.append(chars.charAt(index));
+        }
+        return sb.toString();
     }
 
     private void showJoinFamilyDialog() {
         View view = getLayoutInflater().inflate(R.layout.dialog_edit_text, null);
         EditText et = view.findViewById(R.id.dialog_et);
-        et.setHint("ID семьи");
+        et.setHint("ID группы");
 
         new AlertDialog.Builder(this)
-                .setTitle("Присоединиться к семье")
+                .setTitle("Присоединиться к группе")
                 .setView(view)
                 .setPositiveButton("Войти", (dialog, which) -> {
                     String familyId = et.getText().toString().trim();
@@ -214,9 +236,9 @@ public class FamilyActivity extends AppCompatActivity {
                 if (snapshot.exists()) {
                     familyRef.child(familyId).child("members").child(currentUserId).setValue(true);
                     userRef.child("familyId").setValue(familyId);
-                    Toast.makeText(FamilyActivity.this, "Вы присоединились к семье!", Toast.LENGTH_SHORT).show();
+                    showCustomToast("Вы присоединились к группе!");
                 } else {
-                    Toast.makeText(FamilyActivity.this, "Семья с таким ID не найдена", Toast.LENGTH_SHORT).show();
+                    showCustomToast("Группа с таким ID не найдена");
                 }
             }
 
@@ -229,7 +251,31 @@ public class FamilyActivity extends AppCompatActivity {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         ClipData clip = ClipData.newPlainText("Family ID", currentFamilyId);
         clipboard.setPrimaryClip(clip);
-        Toast.makeText(this, "ID скопирован в буфер обмена", Toast.LENGTH_SHORT).show();
+        showCustomToast("ID скопирован в буфер обмена");
+    }
+
+    private void showLeaveFamilyDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Покинуть группу?")
+                .setMessage("Вы больше не будете видеть участников и общие задачи.")
+                .setPositiveButton("Выйти", (dialog, which) -> leaveFamily())
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void leaveFamily() {
+        if (currentFamilyId == null) return;
+
+        // 1. Удаляем себя из списка участников семьи
+        familyRef.child(currentFamilyId).child("members").child(currentUserId).removeValue();
+
+        // 2. Сбрасываем familyId у пользователя
+        userRef.child("familyId").removeValue().addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                currentFamilyId = null;
+                showCustomToast("Вы покинули группу");
+            }
+        });
     }
 
     @Override
@@ -257,6 +303,15 @@ public class FamilyActivity extends AppCompatActivity {
             Member member = members.get(position);
             holder.nameTv.setText(member.getUsername());
             holder.emailTv.setText(member.getEmail());
+
+            if (member.getAvatarUrl() != null && !member.getAvatarUrl().isEmpty()) {
+                Glide.with(holder.itemView.getContext())
+                        .load(member.getAvatarUrl())
+                        .circleCrop()
+                        .into(holder.avatarIv);
+            } else {
+                holder.avatarIv.setImageResource(android.R.drawable.ic_menu_gallery);
+            }
 
             // Слушаем количество активных задач участника, выданных ТЕКУЩИМ пользователем
             FirebaseDatabase.getInstance().getReference()
@@ -304,11 +359,13 @@ public class FamilyActivity extends AppCompatActivity {
 
     private static class MemberViewHolder extends RecyclerView.ViewHolder {
         TextView nameTv, emailTv, taskCountTv;
+        ImageView avatarIv;
         public MemberViewHolder(@NonNull View itemView) {
             super(itemView);
             nameTv = itemView.findViewById(R.id.member_name_tv);
             emailTv = itemView.findViewById(R.id.member_email_tv);
             taskCountTv = itemView.findViewById(R.id.task_count_tv);
+            avatarIv = itemView.findViewById(R.id.member_avatar_iv);
         }
     }
 }

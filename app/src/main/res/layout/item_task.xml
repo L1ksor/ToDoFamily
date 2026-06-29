@@ -92,6 +92,43 @@
             app:tint="@color/red"
             android:contentDescription="Требуется фото" />
 
+        <LinearLayout
+            android:id="@+id/approval_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:gravity="end"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/task_photo_iv">
+
+            <Button
+                android:id="@+id/reject_btn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Отклонить"
+                android:textColor="@color/red"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/approve_btn"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Принять" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/rejection_comment_tv"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/red"
+            android:textSize="12sp"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/approval_layout" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 
 </androidx.cardview.widget.CardView>
