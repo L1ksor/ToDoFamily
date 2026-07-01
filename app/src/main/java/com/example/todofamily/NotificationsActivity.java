@@ -72,6 +72,16 @@ public class NotificationsActivity extends AppCompatActivity {
                 ItemNotificationBinding itemBinding = ItemNotificationBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false);
                 return new NotificationViewHolder(itemBinding);
             }
+
+            @Override
+            public void onDataChanged() {
+                super.onDataChanged();
+                if (getItemCount() == 0) {
+                    binding.emptyNotificationsTv.setVisibility(View.VISIBLE);
+                } else {
+                    binding.emptyNotificationsTv.setVisibility(View.GONE);
+                }
+            }
         };
 
         binding.notificationsRv.setAdapter(adapter);

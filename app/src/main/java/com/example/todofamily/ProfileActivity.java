@@ -89,6 +89,7 @@ public class ProfileActivity extends AppCompatActivity {
         binding.profileImage.setOnClickListener(v -> showAvatarSelectionDialog());
 
         binding.logoutBtn.setOnClickListener(v -> {
+            stopService(new Intent(ProfileActivity.this, com.example.todofamily.utils.NotificationService.class));
             FirebaseAuth.getInstance().signOut();
             Intent intent = new Intent(ProfileActivity.this, LoginActivity.class);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);

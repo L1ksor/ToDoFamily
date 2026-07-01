@@ -11,9 +11,10 @@ public class Task {
     private String assignedByName;
     private String imageUrl;
     private boolean photoRequired;
-    private int status; // 0: PENDING, 1: WAITING_APPROVAL, 2: REJECTED, 3: COMPLETED
+    private int status; // 0: PENDING, 1: WAITING_APPROVAL, 2: REJECTED, 3: COMPLETED, 4: REWORK
     private String rejectionComment;
-    private int repeatType; // 0: None, 1: Daily, 2: Weekly, 3: Monthly
+    private java.util.List<Integer> repeatDays; // 1: Sun, 2: Mon, ..., 7: Sat (using Calendar constants)
+    private boolean reminderSet;
 
     public Task() {
         // Пустой конструктор для Firebase
@@ -75,6 +76,9 @@ public class Task {
     public String getRejectionComment() { return rejectionComment; }
     public void setRejectionComment(String rejectionComment) { this.rejectionComment = rejectionComment; }
 
-    public int getRepeatType() { return repeatType; }
-    public void setRepeatType(int repeatType) { this.repeatType = repeatType; }
+    public java.util.List<Integer> getRepeatDays() { return repeatDays; }
+    public void setRepeatDays(java.util.List<Integer> repeatDays) { this.repeatDays = repeatDays; }
+
+    public boolean isReminderSet() { return reminderSet; }
+    public void setReminderSet(boolean reminderSet) { this.reminderSet = reminderSet; }
 }

@@ -6,133 +6,36 @@
     android:layout_height="match_parent"
     android:padding="16dp">
 
-    <!-- Состояние: Нет семьи -->
-    <LinearLayout
-        android:id="@+id/no_family_layout"
-        android:layout_width="match_parent"
+    <TextView
+        android:id="@+id/groups_title"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:visibility="gone"
+        android:text="Мои Группы"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/groups_rv"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="16dp"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:visibility="visible">
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/groups_title"
+        tools:listitem="@layout/item_group" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="Вы еще не состоите в группе"
-            android:textSize="18sp"
-            android:layout_marginBottom="24dp" />
-
-        <Button
-            android:id="@+id/create_family_btn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Создать свою группу"
-            android:layout_marginBottom="12dp" />
-
-        <Button
-            android:id="@+id/join_family_btn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Присоединиться по ID"
-            style="@style/Widget.Material3.Button.OutlinedButton" />
-    </LinearLayout>
-
-    <!-- Состояние: В семье -->
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:id="@+id/in_family_layout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone"
-        tools:visibility="visible">
-
-        <TextView
-            android:id="@+id/family_name_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="Моя Группа"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
-
-        <TextView
-            android:id="@+id/family_id_tv"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="ID: unknown"
-            android:textSize="14sp"
-            android:textColor="@color/gray"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/family_name_title" />
-
-        <Button
-            android:id="@+id/copy_id_btn"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Копировать ID группы"
-            android:textSize="12sp"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/family_id_tv" />
-
-        <Button
-            android:id="@+id/view_sent_tasks_btn"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Мои поручения"
-            android:textSize="12sp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/family_id_tv" />
-
-        <Button
-            android:id="@+id/leave_family_btn"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Покинуть группу"
-            android:textColor="@color/red"
-            android:textSize="12sp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/view_sent_tasks_btn" />
-
-        <View
-            android:id="@+id/family_divider"
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="8dp"
-            android:background="@android:color/darker_gray"
-            app:layout_constraintTop_toBottomOf="@+id/copy_id_btn" />
-
-        <TextView
-            android:id="@+id/members_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Участники:"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/family_divider" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/members_rv"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginTop="8dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/members_label"
-            tools:listitem="@layout/item_member" />
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/add_group_fab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:src="@android:drawable/ic_input_add"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:tint="@color/white"
+        android:contentDescription="Создать или войти в группу" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

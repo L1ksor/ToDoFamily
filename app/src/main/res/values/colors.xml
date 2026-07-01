@@ -3,8 +3,12 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="blue">#1D61E7</color>
-    <color name="red">#FF0000</color>
-    <color name="green">#4CAF50</color>
-    <color name="yellow">#FFEB3B</color>
-    <color name="gray">#888888</color>
+    <color name="red">#D32F2F</color> <!-- Material Red -->
+    <color name="green">#388E3C</color> <!-- Material Green -->
+    <color name="yellow">#FBC02D</color> <!-- Material Yellow -->
+    <color name="gray">#757575</color> <!-- Material Gray -->
+
+    <!-- Semantic names for text -->
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
 </resources>
